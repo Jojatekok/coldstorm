@@ -1,24 +1,24 @@
 Controllers.controller("LoginCtrl",
-    ["$scope", "$http", "$rootScope", "$location", "$timeout", "$filter",
-    "$cookies", "Connection", "User", "Channel", "Parser",
-    function ($scope, $http, $rootScope, $location, $timeout, $filter,
-    $cookies, Connection, User, Channel, Parser)
+    ["$log", "$scope", "$http", "$rootScope", "$location", "$timeout", "$filter",
+    "Connection", "User", "Channel", "YouTube", "Parser",
+    function ($log, $scope, $http, $rootScope, $location, $timeout, $filter,
+    Connection, User, Channel, YouTube, Parser)
     {
         var mustKill = false;
         $scope.user = User.get("~");
-        $scope.user.nickName = $cookies.nickName;
-        if ($cookies.color)
+        $scope.user.nickName = $.cookie("nickName");
+        if ($.cookie("color"))
         {
-            $scope.user.color = $cookies.color;
+            $scope.user.color = $.cookie("color");
         }
 
         $location.hash("");
 
-        $http.jsonp("http://freegeoip.net/json/?callback=JSON_CALLBACK")
+        $http.jsonp("http://geoip.yonom.org/index.php?callback=JSON_CALLBACK")
         .success(function (data)
         {
-            $scope.user.country = data.country_name;
-            $scope.user.flag = data.country_code;
+            $scope.user.country = data.geoplugin_countryName;
+            $scope.user.flag = data.geoplugin_countryCode;
         });
 
         $rootScope.$on("err_nicknameinuse", function (evt)
@@ -33,8 +33,6 @@ Controllers.controller("LoginCtrl",
             }
 
             Connection.close();
-            $scope.connecting = false;
-            $scope.connected = false;
 
             $rootScope.$apply(function ()
             {
@@ -49,41 +47,39 @@ Controllers.controller("LoginCtrl",
             $scope.error = "";
         });
 
-        $scope.connecting = false;
-        $scope.connected = false;
-        $scope.hostToken = "";
+        $scope.reset = function ()
+        {
+            $scope.connecting = false;
+            $scope.connected = false;
 
-        if (VERSION === "local")
-        {
-            $scope.port = 81;
-        } else
-        {
-            $scope.port = 82;
+            if (VERSION === "local")
+            {
+                $scope.port = 81;
+            } else
+            {
+                $scope.port = 82;
+            }
+            $scope.error = "";
         }
-        $scope.error = "";
 
         $scope.login = function ()
         {
+            $scope.reset();
             User.register($scope.user.nickName);
             User.alias("~", $scope.user.nickName);
 
-            $http.jsonp("http://kaslai.us/coldstorm/fixip.php?nick=" +
+            $http.jsonp("http://kaslai.us/coldstorm/fixip2.php?nick=" +
                 encodeURI($scope.user.nickName) + "&random=" +
-                Math.floor(Math.random() * 10000000));
+                Math.floor(Math.random() * 10000000) +
+		        "&callback=JSON_CALLBACK").success(function (data)
+		        {
+		            $scope.hostToken = data.tag;
+		        });
 
-            $cookies.nickName = $scope.user.nickName;
-            $cookies.color = $scope.user.color;
+            $.cookie("nickName", $scope.user.nickName, { expires: new Date(2017, 00, 01) });
+            $.cookie("color", $scope.user.color, { expires: new Date(2017, 00, 01) });
 
-            $scope.hostToken = md5($scope.user.nickName);
             $scope.connect();
-
-            while ($scope.connected === false)
-            {
-                if ($scope.retry() === false)
-                {
-                    break;
-                }
-            }
         };
 
         $scope.connect = function ()
@@ -91,9 +87,28 @@ Controllers.controller("LoginCtrl",
             if ($scope.connecting === false)
             {
                 $scope.connecting = true;
+
+
+                // Attempt to connect
+                $log.log("connecting to ws://frogbox.es:" + $scope.port)
                 Connection.connect("ws://frogbox.es:" + $scope.port);
+
+                $timeout(function ()
+                {
+                    if ($scope.connecting)
+                    {
+                        Connection.close();
+                    }
+                }, 30000)
+
                 Connection.onOpen(function ()
                 {
+                    // Connection successfully opened
+                    $scope.reset();
+                    $scope.connected = true;
+
+                    $location.path("/server");
+
                     Connection.send("NICK " + $scope.user.nickName);
                     Connection.send("USER " +
                         $scope.user.color.substring(1).toUpperCase() +
@@ -168,23 +183,29 @@ Controllers.controller("LoginCtrl",
 
                 Connection.onClose(function ()
                 {
+                    $scope.connecting = false;
                     if ($scope.connected)
                     {
+                        // We were already connected and on the chat view, go back to login
                         $location.path("/login");
-                        $scope.connected = false;
+                        $scope.reset();
+                    }
+
+                    else
+                    {
+                        if ($scope.port < 85)
+                        {
+                            $scope.port++;
+                            $scope.connect();
+                        } else
+                        {
+                            $rootScope.$apply(function ()
+                            {
+                                $scope.error = "Couldn't connect to the server";
+                            })
+                        }
                     }
                 });
             }
         };
-
-        $scope.retry = function ()
-        {
-            while ($scope.port < 85)
-            {
-                $scope.port++;
-                $scope.connect();
-                return true;
-            }
-            return false;
-        }
     }]);

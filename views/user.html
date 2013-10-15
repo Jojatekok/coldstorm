@@ -1,4 +1,5 @@
 <div>
-    <span class="user" ng-click="showOptions = !showOptions" ng-show="user" style="color: {{ user.color }}">{{ rank }}{{ user.nickName }}</span>
-    <useroptions user="user" options="showOptions"></useroptions>
+    <span class="user" ng-click="toggleOptions()" ng-show="user" title="{{ user.nickName }}" style="color: {{ user.color }}">
+        {{ rank }}{{ user.nickName | truncate:10 }}</span><span class="awayMsg" ng-show="user.awayMsg" title="{{ user.awayMsg }}">^{{ user.awayMsg | truncate:10 }}</span>
+    <useroptions user="selectedUser" channel="channel"></useroptions>
 </div>

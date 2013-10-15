@@ -1,7 +1,7 @@
 Controllers.controller("ServerCtrl",
-    ["$scope", "$location", "User", "Channel", "Query", "Server",
+    ["$scope", "$location", "User", "Channel", "Query", "YouTube", "Server",
     "Connection",
-    function ($scope, $location, User, Channel, Query, Server,
+    function ($scope, $location, User, Channel, Query, YouTube, Server,
     Connection)
     {
         $scope.user = User.get("~");
@@ -10,8 +10,8 @@ Controllers.controller("ServerCtrl",
         console.log(Server);
         if ($scope.user.nickName === "")
         {
-            //$location.path("/login");
-            //return;
+            $location.path("/login");
+            return;
         }
 
         $scope.$watch(function ()
@@ -22,5 +22,10 @@ Controllers.controller("ServerCtrl",
         $scope.$watch(function ()
         {
             $scope.channels = Channel.all();
+        });
+
+        $scope.$watch(function ()
+        {
+            $scope.youtubes = YouTube.all();
         });
     }]);
