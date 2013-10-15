@@ -1,8 +1,8 @@
 Services.factory("Parser",
     ["$http", "$location", "$rootScope", "$window", "$log", "Connection",
-    "Channel", "User", "Query", "Server",
+    "Channel", "User", "Query", "Server", "AwayChecker", 
     function ($http, $location, $rootScope, $window, $log, Connection,
-    Channel, User, Query, Server)
+    Channel, User, Query, Server, AwayChecker)
     {
         var messages = [];
 
@@ -108,6 +108,36 @@ Services.factory("Parser",
             return null;
         }
 
+        var serverMessageBlacklist =
+            [
+                "332",
+                "333",
+                "352",
+                "353",
+                "366",
+                "311",
+                "378",
+                "319",
+                "312",
+                "301",
+                "379",
+                "317",
+                "318",
+                "330",
+                "307",
+                "315"
+            ];
+
+        var _serverMessage = new Message(function (ircline)
+        {
+            return ircline.prefix === "Frogbox.es"
+                && serverMessageBlacklist.indexOf(ircline.cmd) < 0;
+        }, function (ircline)
+        {
+            Server.addLine("[" + ircline.cmd + "] " + ircline.args.slice(1).join(" "));
+        });
+        registerMessage(_serverMessage);
+
         var welcomeHandlers = [];
 
         var rpl_welcomeMessage = new Message(function (ircline)
@@ -115,6 +145,7 @@ Services.factory("Parser",
             return ircline.cmd === "001";
         }, function (ircline)
         {
+            AwayChecker.start();
             for (var i = 0; i < welcomeHandlers.length; i++)
             {
                 welcomeHandlers[i]();
@@ -154,7 +185,6 @@ Services.factory("Parser",
 
             if (ircline.prefix == "Frogbox.es")
             {
-                Server.addLine(line);
                 return;
             }
 
@@ -257,6 +287,16 @@ Services.factory("Parser",
             var user = User.get(ircline.args[5]);
 
             var username = ircline.args[2];
+            var awayflag = ircline.args[6][0];
+
+            if (awayflag === "G")
+            {
+                Connection.send("WHOIS " + user.nickName);
+            } else if (awayflag === "H")
+            {
+                user.awayMsg = null;
+            }
+
             var rank = ircline.args[6].charAt(ircline.args[6].length - 1);
 
             if (rank != "" && ["+", "%", "@"].indexOf(rank) != -1)
@@ -276,13 +316,19 @@ Services.factory("Parser",
                 });
             }
 
-            $http.jsonp("http://api.worldbank.org/countries/" + user.flag + "?format=jsonp&prefix=JSON_CALLBACK").success(function (data)
+            if (user.country === "Unknown")
             {
-                if (data[1][0].name)
+                $http.jsonp("http://api.worldbank.org/countries/" + user.flag + "?format=jsonp&prefix=JSON_CALLBACK").success(function (data)
                 {
-                    user.country = data[1][0].name;
-                }
-            });
+                    if (data[1])
+                    {
+                        user.country = data[1][0].name;
+                    } else
+                    {
+                        user.country = "Outlaw";
+                    }
+                });
+            }
         });
         registerMessage(rpl_whoreplyMessage);
 
@@ -306,13 +352,19 @@ Services.factory("Parser",
                 });
             }
 
-            $http.jsonp("http://api.worldbank.org/countries/" + user.flag + "?format=jsonp&prefix=JSON_CALLBACK").success(function (data)
+            if (user.country === "Unknown")
             {
-                if (data[1][0].name)
+                $http.jsonp("http://api.worldbank.org/countries/" + user.flag + "?format=jsonp&prefix=JSON_CALLBACK").success(function (data)
                 {
-                    user.country = data[1][0].name;
-                }
-            });
+                    if (data[1])
+                    {
+                        user.country = data[1][0].name;
+                    } else
+                    {
+                        user.country = "Outlaw";
+                    }
+                });
+            }
         });
         registerMessage(rpl_whoisuserMessage);
 
@@ -347,6 +399,34 @@ Services.factory("Parser",
         });
         registerMessage(rpl_whoischannelsMessage);
 
+        var rpl_awayMessage = new Message(function (ircline)
+        {
+            return ircline.cmd === "301";
+        }, function (ircline)
+        {
+            var user = User.get(ircline.args[1]);
+            user.awayMsg = ircline.args[2];
+        });
+        registerMessage(rpl_awayMessage);
+
+        var rpl_unawayMessage = new Message(function (ircline)
+        {
+            return ircline.cmd === "305";
+        }, function (ircline)
+        {
+            Server.addLine("You are no longer marked as being away.");
+        });
+        registerMessage(rpl_unawayMessage);
+
+        var rpl_nowawayMessage = new Message(function (ircline)
+        {
+            return ircline.cmd === "306";
+        }, function (ircline)
+        {
+            Server.addLine("You have been marked as being away.");
+        });
+        registerMessage(rpl_nowawayMessage);
+
         var joinMessage = new Message(function (ircline)
         {
             return ircline.cmd === "JOIN";
@@ -367,6 +447,8 @@ Services.factory("Parser",
                 }
 
                 $rootScope.$broadcast("channel.joined", channel);
+
+                AwayChecker.register(channel);
             } else
             {
                 channel.addLine(user.nickName + " joined the room.");
@@ -619,11 +701,34 @@ Services.factory("Parser",
                         {
                             target.addLine(setter.nickName + " " + action + " " + currMode + " from " + userTarget.nickName + ".");
                         }
+                    } else if ("b".indexOf(modes[i]) != -1)
+                    {
+                        target.addLine(setter.nickName + " " + action + " ban on " + parameters[paramIndex] + ".");
                     }
                 }
             }
         });
         registerMessage(modeMessage);
+
+        var rpl_banlistMessage = new Message(function (ircline)
+        {
+            return ircline.cmd === "367";
+        }, function (ircline)
+        {
+            var channel = Channel.get(ircline.args[1]);
+            var mask = ircline.args[2];
+            var setter = ircline.args[3];
+            var time = new Date(ircline.args[4] * 1000);
+
+            if (channel)
+            {
+                channel.addLine("Ban on \\u" + mask + "\\r set on " + time.toLocaleString() + " by \\b" + setter + "\\r.");
+            } else
+            {
+                Server.addLine(ircline.args[1] + " ban on " + mask + " set on " + time.toLocaleString() + " by \\b" + setter + "\\r.");
+            }
+        });
+        registerMessage(rpl_banlistMessage);
 
         var nickMessage = new Message(function (ircline)
         {
@@ -714,6 +819,8 @@ Services.factory("Parser",
         $rootScope.$on("channel.close", function (evt, channel)
         {
             Connection.send("PART " + channel.name);
+
+            AwayChecker.unregister(channel);
         });
 
         return {

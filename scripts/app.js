@@ -25,9 +25,9 @@ Coldstorm.config(["$routeProvider", function ($routeProvider)
             templateUrl: "views/query.html",
             controller: "QueryCtrl"
         }).
-        when("/settings", {
-            templateUrl: "views/settings.html",
-            controller: "SettingsCtrl"
+        when("/yt/:id", {
+            templateUrl: "views/youtube.html",
+            controller: "YouTubeCtrl"
         }).
         otherwise({
             redirectTo: "/login"
@@ -48,6 +48,12 @@ function ($http, $location, $rootScope)
     {
         VERSION = "local";
     }
+
+    $http.get("https://api.github.com/repos/coldstorm/coldstorm/issues?state=closed&sort=updated&per_page=5")
+        .success(function (data)
+        {
+            $rootScope.issues = data;
+        });
 
     var clearNotifications = function ()
     {
@@ -83,4 +89,6 @@ function ($http, $location, $rootScope)
         version: VERSION,
         shortHash: VERSION
     };
+
+    $rootScope.issues = [];
 }]);

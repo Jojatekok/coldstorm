@@ -16,7 +16,7 @@ Services.factory("Channel", ["$rootScope", "User", "Notifications", function ($r
         channel.addLine(line, user);
 
         var myUser = User.get("~");
-        var re = new RegExp("([^\\w\\d]|^)(" + myUser.nickName + ")(\\s?" + myUser.nickName + ")*([^\\w\\d]|$)", "ig");
+        var re = new RegExp("\\b(" + myUser.nickName + ")\\b", "ig");
         var matches = message.line.match(re);
 
         if ($rootScope.blurred)
@@ -85,6 +85,10 @@ Services.factory("Channel", ["$rootScope", "User", "Notifications", function ($r
                     $rootScope.$broadcast("channel.close", this);
 
                     delete registry[this.name];
+                },
+                clear: function ()
+                {
+                    this.lines.length = 0;
                 },
                 lines: [],
                 name: name,
